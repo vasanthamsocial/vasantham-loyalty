@@ -9,6 +9,7 @@ import { accessRoleOf, permissionsOf } from './rbac.js';
 /* ---------- server secret ---------- */
 function loadSecret() {
   if (process.env.APP_SECRET) return process.env.APP_SECRET;
+  if (process.env.VERCEL) throw new Error('APP_SECRET must be set in the Vercel project settings');
   const f = path.join(CONFIG.dataDir, 'secret.key');
   if (!fs.existsSync(f)) fs.writeFileSync(f, crypto.randomBytes(48).toString('hex'), { mode: 0o600 });
   return fs.readFileSync(f, 'utf8').trim();

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm --prefix backend ci --omit=dev",
+  "buildCommand": "node firebase/build-hosting.mjs",
+  "outputDirectory": "firebase/hosting-dist",
+  "cleanUrls": true,
+  "regions": ["bom1"],
+  "functions": {
+    "api/index.js": { "maxDuration": 300, "includeFiles": "backend/src/**" }
+  },
+  "redirects": [
+    { "source": "/customer", "destination": "/customer/", "permanent": false },
+    { "source": "/manager", "destination": "/manager/", "permanent": false },
+    { "source": "/admin", "destination": "/admin/", "permanent": false }
+  ],
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api" },
+    { "source": "/media/:path*", "destination": "/api" }
+  ],
+  "headers": [
+    { "source": "/(.*)", "headers": [
+      { "key": "X-Content-Type-Options", "value": "nosniff" },
+      { "key": "Referrer-Policy", "value": "same-origin" },
+      { "key": "X-Frame-Options", "value": "DENY" }
+    ] },
+    { "source": "/(.*)\.(js|css|html)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+  ],
+  "crons": [{ "path": "/api/cron/daily", "schedule": "35 18 * * *" }]
+}

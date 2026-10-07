@@ -278,6 +278,9 @@ vasantham-loyalty/
 ├── manager-panel/      Manager Panel screens         → /manager
 ├── admin-panel/        Admin Panel screens           → /admin
 ├── shared/             styles, helpers, icon and start page used by all three → /shared, /
+├── api/                Vercel entry point (the backend as one serverless function)
+├── firebase/           Hosting build script (also used by Vercel)
+├── vercel.json, firebase.json   deployment settings
 └── package.json        shortcuts: npm start / test / seed / sample / demo
 ```
 
@@ -291,6 +294,9 @@ src/
   server.js        Express app, static hosting, housekeeping timers
   db.js            SQLite schema, transactions, settings
   util.js          points/money math, mobile normalisation, IST dates
+  db-remote.js     Turso / libSQL connector (used when TURSO_DATABASE_URL is set)
+  firebase.js      Firebase settings, phone-OTP verification
+  media.js         offer images, PDFs and logos (files on disk, or in the database on Turso)
   auth.js          staff passwords, signed sessions, OTP, rotating customer QR, verification tickets
   points.js        points ledger
   offers.js        offer types, eligibility, auto bonus/multiplier engine
@@ -347,6 +353,40 @@ The Emulator UI is at http://127.0.0.1:4001.
 `firebase.config.json` and the service account key are excluded from Git; never commit them.
 
 **Hosting:** `npm run build:hosting` packs the three app folders into `firebase/hosting-dist`. `npm run deploy:hosting` deploys them; `/api` and `/media` are forwarded to the backend on Cloud Run (`vasantham-backend`, asia-south1), see `firebase.json`.
+
+## Deploying to Vercel
+
+The repository is ready for Vercel: `vercel.json` builds the three apps as static files and runs the backend as one serverless function (`api/index.js`) in Mumbai (`bom1`). Vercel keeps no files between requests, so on Vercel:
+
+| Needs | How it works on Vercel |
+|---|---|
+| Database | **Turso** (hosted SQLite). The SQL is identical to the local database, so nothing is rewritten. Without `TURSO_DATABASE_URL` the app uses the local file as before. |
+| Offer images, PDFs, logos | Stored in the database (`media_files`) automatically when Turso is used |
+| Nightly segments and engagement | **Vercel Cron** calls `/api/cron/daily` at 00:05 IST, protected by `CRON_SECRET`. Expired redemption QRs are also cleaned up whenever one is used. |
+| Firebase settings | `VL_FIREBASE_CONFIG` (the JSON of `backend/firebase.config.json`) |
+
+**Steps:**
+
+1. **Create a Turso database** in Mumbai (`aws-ap-south-1`), either in the Vercel dashboard (**Storage → Marketplace → Turso**, which adds `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` to the project for you) or at turso.tech.
+2. **Copy your existing data into it** (optional, from this PC): `TURSO_DATABASE_URL=… TURSO_AUTH_TOKEN=… npm run db:copy-to-turso`. This copies every table and uploaded file and verifies the row counts. It refuses to overwrite a database that already has customers. For a fresh start, run `npm run seed` with the same two variables instead.
+3. **Import the GitHub repository in Vercel** and leave the framework as **Other**; `vercel.json` sets the install, build and output.
+4. **Environment variables:**
+
+| Variable | Value |
+|---|---|
+| `APP_SECRET` | long random string; never change it (signs logins and QR codes) |
+| `DEV_OTP` | `0` |
+| `DATA_DIR` | `/tmp/data` |
+| `CRON_SECRET` | long random string (Vercel sends it to the daily job) |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | from step 1 |
+| `VL_FIREBASE_CONFIG` | one-line JSON of `backend/firebase.config.json` (optional until Firebase OTP is on) |
+
+**Limits to know:**
+- Vercel accepts uploads of up to **4.5 MB** per request (offer attachments and Excel files). Upload POS data one day at a time.
+- Each request can run for up to 5 minutes.
+- **Customer OTP needs Firebase phone OTP switched on** (see the Firebase section) and the Vercel domain added to Firebase's authorized domains. Vercel has no SMS gateway, and with `DEV_OTP=0` the built-in OTP is only written to the server log. Staff logins don't need OTP.
+
+**Testing the Turso path locally:** run a libSQL server (`docker run -p 18080:8080 ghcr.io/tursodatabase/libsql-server`) and start or test with `TURSO_DATABASE_URL=http://127.0.0.1:18080`. All tests pass on it.
 
 ## Before going live
 

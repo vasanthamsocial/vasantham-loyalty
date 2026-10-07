@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { CONFIG, DEFAULT_SETTINGS } from './config.js';
 
 const SCHEMA = `
@@ -527,11 +526,35 @@ CREATE TABLE IF NOT EXISTS interest_segments (
 `;
 
 fs.mkdirSync(CONFIG.dataDir, { recursive: true });
-const file = CONFIG.dbFile === ':memory:' ? ':memory:' : path.join(CONFIG.dataDir, CONFIG.dbFile);
-export const db = new DatabaseSync(file);
-if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA busy_timeout = 5000;');
+
+/*
+ * Local SQLite file by default. Set TURSO_DATABASE_URL (+ TURSO_AUTH_TOKEN) to use a hosted
+ * Turso / libSQL database instead, e.g. on Vercel, where local files don't persist.
+ * The SQL is identical either way. ("%DATA_DIR%" in a file: URL is only for testing the driver.)
+ */
+export const REMOTE_DB = !!process.env.TURSO_DATABASE_URL;
+async function openDatabase() {
+  if (REMOTE_DB) {
+    const { RemoteDatabase } = await import('./db-remote.js');
+    return new RemoteDatabase(process.env.TURSO_DATABASE_URL.replace('%DATA_DIR%', CONFIG.dataDir.split(path.sep).join('/')), process.env.TURSO_AUTH_TOKEN);
+  }
+  const { DatabaseSync } = await import('node:sqlite');
+  const file = CONFIG.dbFile === ':memory:' ? ':memory:' : path.join(CONFIG.dataDir, CONFIG.dbFile);
+  const local = new DatabaseSync(file);
+  if (file !== ':memory:') local.exec('PRAGMA journal_mode = WAL;');
+  local.exec('PRAGMA busy_timeout = 5000;');
+  return local;
+}
+export const db = await openDatabase();
 db.exec(SCHEMA);
+db.exec(`CREATE TABLE IF NOT EXISTS media_files (
+  kind TEXT NOT NULL,
+  file TEXT NOT NULL,
+  type TEXT NOT NULL,
+  data BLOB NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (kind, file)
+)`);
 
 // migrations for databases created before a column existed
 function addColumns(table, cols) {
@@ -594,8 +617,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS ix_redemptions_business ON redemptions(business_id, approved_at);
 `);
 
-const insSetting = db.prepare('INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)');
-for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insSetting.run(k, String(v));
+// one statement for all defaults (one round trip on a hosted database)
+const defaults = Object.entries(DEFAULT_SETTINGS);
+db.prepare(`INSERT OR IGNORE INTO settings(key, value) VALUES ${defaults.map(() => '(?, ?)').join(', ')}`)
+  .run(...defaults.flatMap(([k, v]) => [k, String(v)]));
 
 /* ---------- helpers ---------- */
 
@@ -625,8 +650,21 @@ export function tx(fn) {
     return r;
   } catch (e) {
     depth--;
-    db.exec(depth === 0 ? 'ROLLBACK' : `ROLLBACK TO ${sp}; RELEASE ${sp}`);
+    if (depth === 0) db.exec('ROLLBACK');
+    else {
+      db.exec(`ROLLBACK TO ${sp}`);
+      db.exec(`RELEASE ${sp}`);
+    }
     throw e;
+  }
+}
+
+/** Insert many rows with multi-row INSERTs (fast locally and on a hosted database). Call inside tx(). */
+export function insertRows(table, columns, rows, { chunk = 200 } = {}) {
+  const one = `(${columns.map(() => '?').join(', ')})`;
+  for (let i = 0; i < rows.length; i += chunk) {
+    const part = rows.slice(i, i + chunk);
+    db.prepare(`INSERT INTO ${table}(${columns.join(', ')}) VALUES ${part.map(() => one).join(', ')}`).run(...part.flat());
   }
 }
 

@@ -1,4 +1,4 @@
-import { all, db, get, run, setting, tx } from './db.js';
+import { all, db, get, insertRows, run, setting, tx } from './db.js';
 import { addDays, daysBetween, istDate, nowIso } from './util.js';
 
 export const SEGMENTS = {
@@ -104,7 +104,8 @@ export function recomputeSegments(asOf = istDate()) {
   const now = nowIso();
   tx(() => {
     db.exec('DELETE FROM customer_segments');
-    const ins = db.prepare('INSERT INTO customer_segments(customer_id, segment, computed_at) VALUES (?,?,?)');
+    const out = [];
+    const ins = { run: (cid, seg, at) => out.push([cid, seg, at]) };
     for (const r of rows) {
       const segs = [];
       if (r.app_registered_at) segs.push('APP_USER');
@@ -133,6 +134,7 @@ export function recomputeSegments(asOf = istDate()) {
       for (const s of segs) ins.run(r.id, s, now);
     }
     for (const [cid, seg] of interestSegments(asOf)) ins.run(cid, seg, now);
+    insertRows('customer_segments', ['customer_id', 'segment', 'computed_at'], out);
   });
   run("INSERT INTO settings(key, value) VALUES ('segments_computed_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", String(Date.now()));
   return rows.length;

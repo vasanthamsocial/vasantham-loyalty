@@ -14,8 +14,10 @@ const EMULATOR_PROJECT = 'demo-vasantham';
 const AUTH_EMULATOR_PORT = Number(process.env.FIREBASE_AUTH_EMULATOR_PORT || 9099);
 
 function load() {
+  // VL_FIREBASE_CONFIG (JSON, same shape as the file) is for hosts like Vercel where the file isn't deployed
   const file = process.env.FIREBASE_CONFIG_FILE || path.join(CONFIG.root, 'firebase.config.json');
-  const cfg = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+  const cfg = process.env.VL_FIREBASE_CONFIG ? JSON.parse(process.env.VL_FIREBASE_CONFIG)
+    : fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
   if (process.env.FIREBASE_EMULATOR === '1' || process.argv.includes('--firebase-emulator')) {
     return {
       enabled: true,
@@ -45,8 +47,9 @@ async function app() {
   if (adminApp) return adminApp;
   if (FIREBASE.emulator) process.env.FIREBASE_AUTH_EMULATOR_HOST ||= `127.0.0.1:${AUTH_EMULATOR_PORT}`;
   const { initializeApp, getApps, cert } = await import('firebase-admin/app');
-  const sa = FIREBASE.serviceAccountFile && fs.existsSync(FIREBASE.serviceAccountFile)
-    ? { credential: cert(JSON.parse(fs.readFileSync(FIREBASE.serviceAccountFile, 'utf8'))) } : {};
+  const saJson = process.env.VL_FIREBASE_SERVICE_ACCOUNT
+    || (FIREBASE.serviceAccountFile && fs.existsSync(FIREBASE.serviceAccountFile) ? fs.readFileSync(FIREBASE.serviceAccountFile, 'utf8') : null);
+  const sa = saJson ? { credential: cert(JSON.parse(saJson)) } : {};
   adminApp = getApps()[0] || initializeApp({ projectId: FIREBASE.projectId, ...sa });
   return adminApp;
 }

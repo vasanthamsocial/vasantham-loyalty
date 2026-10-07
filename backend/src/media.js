@@ -1,14 +1,36 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CONFIG } from './config.js';
-import { bad, randomToken } from './util.js';
+import { REMOTE_DB, get, run } from './db.js';
+import { bad, nowIso, randomToken } from './util.js';
 
-/** Offer images / PDFs live on disk; the random file name is the only way to reach one. */
+/*
+ * Offer images / PDFs and logos; the random file name is the only way to reach one.
+ * Stored as files under data/uploads, or in the database (media_files table) when the
+ * database is hosted (Vercel has no lasting disk). MEDIA_STORE=disk|db overrides.
+ */
+export const MEDIA_STORE = process.env.MEDIA_STORE || (REMOTE_DB ? 'db' : 'disk');
 export const OFFER_MEDIA_DIR = path.join(CONFIG.dataDir, 'uploads', 'offers');
 export const OFFER_MEDIA_URL = '/media/offers';
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const DIRS = { offers: OFFER_MEDIA_DIR };
 
-fs.mkdirSync(OFFER_MEDIA_DIR, { recursive: true });
+if (MEDIA_STORE === 'disk') fs.mkdirSync(OFFER_MEDIA_DIR, { recursive: true });
+
+const MIME = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf' };
+function store(kind, file, buf) {
+  if (MEDIA_STORE === 'db') run('INSERT INTO media_files(kind, file, type, data, created_at) VALUES (?,?,?,?,?)', kind, file, MIME[file.split('.').pop()], buf, nowIso());
+  else fs.writeFileSync(path.join(DIRS[kind], file), buf);
+}
+function unstore(kind, file) {
+  if (MEDIA_STORE === 'db') run('DELETE FROM media_files WHERE kind = ? AND file = ?', kind, file);
+  else fs.rmSync(path.join(DIRS[kind], file), { force: true });
+}
+/** For serving from the database: { type, data } or null. */
+export function readMedia(kind, file) {
+  if (!/^[\w-]+\.(jpg|png|webp|pdf)$/.test(String(file))) return null;
+  return get('SELECT type, data FROM media_files WHERE kind = ? AND file = ?', kind, file) || null;
+}
 
 // Detect by content, not by the name/extension the browser sends.
 function sniff(buf) {
@@ -26,14 +48,14 @@ export function saveOfferAttachment(buf, originalName) {
   const kind = sniff(buf);
   if (!kind) throw bad('Only JPG, PNG, WebP images or PDF files can be attached');
   const file = `${randomToken(18)}.${kind.ext}`;
-  fs.writeFileSync(path.join(OFFER_MEDIA_DIR, file), buf);
+  store('offers', file, buf);
   const name = String(originalName || '').replace(/[^\w .()-]/g, '').trim().slice(0, 120) || `offer.${kind.ext}`;
   return { attachment_file: file, attachment_type: kind.type, attachment_name: name };
 }
 
 export function removeOfferAttachment(file) {
   if (!file || !/^[\w-]+\.(jpg|png|webp|pdf)$/.test(file)) return;
-  fs.rmSync(path.join(OFFER_MEDIA_DIR, file), { force: true });
+  unstore('offers', file);
 }
 
 /** What clients get: { url, kind: 'image' | 'pdf', name } or null. */
@@ -49,7 +71,8 @@ export function attachmentView(o) {
 /* ---------- business logos (images only) ---------- */
 export const LOGO_DIR = path.join(CONFIG.dataDir, 'uploads', 'logos');
 export const LOGO_URL = '/media/logos';
-fs.mkdirSync(LOGO_DIR, { recursive: true });
+DIRS.logos = LOGO_DIR;
+if (MEDIA_STORE === 'disk') fs.mkdirSync(LOGO_DIR, { recursive: true });
 
 export function saveLogo(buf) {
   if (!Buffer.isBuffer(buf) || !buf.length) throw bad('Choose a logo image to upload');
@@ -57,11 +80,11 @@ export function saveLogo(buf) {
   const kind = sniff(buf);
   if (!kind || kind.ext === 'pdf') throw bad('Logo must be a JPG, PNG or WebP image');
   const file = `${randomToken(18)}.${kind.ext}`;
-  fs.writeFileSync(path.join(LOGO_DIR, file), buf);
+  store('logos', file, buf);
   return file;
 }
 export function removeLogo(file) {
   if (!file || !/^[\w-]+\.(jpg|png|webp)$/.test(file)) return;
-  fs.rmSync(path.join(LOGO_DIR, file), { force: true });
+  unstore('logos', file);
 }
 export const logoUrl = (file) => (file ? `${LOGO_URL}/${file}` : null);

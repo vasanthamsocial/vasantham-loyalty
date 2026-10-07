@@ -10,12 +10,14 @@
     "sample": "node --disable-warning=ExperimentalWarning scripts/make-sample-excel.js",
     "demo": "node --disable-warning=ExperimentalWarning scripts/demo-data.js",
     "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\"",
-    "start:firebase-emulator": "node --disable-warning=ExperimentalWarning src/server.js --firebase-emulator"
+    "start:firebase-emulator": "node --disable-warning=ExperimentalWarning src/server.js --firebase-emulator",
+    "db:copy-to-turso": "node --disable-warning=ExperimentalWarning scripts/copy-to-turso.js"
   },
   "engines": {
     "node": ">=22.13"
   },
   "dependencies": {
+    "@libsql/client": "^0.15.15",
     "express": "^5.1.0",
     "firebase-admin": "^13.10.0",
     "qrcode": "^1.5.4",

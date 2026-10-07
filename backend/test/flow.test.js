@@ -290,6 +290,7 @@ test('offer image / PDF attachment: upload, shown to customers, sent to app user
   const img = await fetch(root + seen.attachment.url);
   assert.equal(img.status, 200);
   assert.equal(img.headers.get('content-type'), 'image/png');
+  assert.ok(Buffer.from(await img.arrayBuffer()).equals(png), 'served image must be byte-for-byte the uploaded one');
   assert.equal((await fetch(`${root}/media/offers/nope.png`)).status, 404);
 
   // replacing with a PDF deletes the old image
