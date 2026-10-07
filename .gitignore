@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+
+# live data — database, secret key, uploaded files (never commit)
+backend/data/
+backend/samples/
+
+# Firebase settings and keys
+backend/firebase.config.json
+backend/firebase-service-account.json
+*service-account*.json
+.firebase/
+firebase/hosting-dist/
+
+# environment / secrets
+.env
+.env.*
+
+# Android build output and local machine settings
+*.apk
+*.aab
+customer-app/android-app/android/local.properties
+customer-app/android-app/android/.gradle/
+customer-app/android-app/android/**/build/
+
+# logs and OS files
+*.log
+.DS_Store
+Thumbs.db

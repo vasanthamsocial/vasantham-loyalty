@@ -1,0 +1,24 @@
+{
+  "hosting": {
+    "public": "firebase/hosting-dist",
+    "cleanUrls": true,
+    "trailingSlash": true,
+    "ignore": ["**/.*"],
+    "rewrites": [
+      { "source": "/api/**", "run": { "serviceId": "vasantham-backend", "region": "asia-south1" } },
+      { "source": "/media/**", "run": { "serviceId": "vasantham-backend", "region": "asia-south1" } }
+    ],
+    "headers": [
+      { "source": "**", "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "same-origin" }
+      ] },
+      { "source": "**/*.@(js|css|html)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+    ]
+  },
+  "emulators": {
+    "auth": { "host": "0.0.0.0", "port": 9099 },
+    "ui": { "enabled": true, "host": "127.0.0.1", "port": 4001 },
+    "singleProjectMode": true
+  }
+}

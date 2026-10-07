@@ -1,0 +1,13 @@
+{
+  "appId": "com.vasantham.rewards",
+  "appName": "Vasantham Rewards",
+  "webDir": "www",
+  "server": {
+    "url": "http://10.0.2.2:4000/customer/",
+    "cleartext": true,
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "backgroundColor": "#0e6b3f"
+  }
+}

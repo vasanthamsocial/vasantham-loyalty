@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Panel</title>
+  <link rel="icon" href="/shared/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/shared/style.css" />
+  <style>
+    .layout { display: grid; grid-template-columns: 230px 1fr; min-height: 100vh; }
+    aside { background: var(--brand-dark); color: #d6e7dd; padding: 14px 10px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+    aside .logo { color: #fff; font-weight: 800; padding: 4px 10px 12px; }
+    aside .logo span { color: #ffd66b; }
+    aside .group { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #8fb9a2; margin: 14px 10px 4px; }
+    aside button { display: block; width: 100%; text-align: left; background: none; border: 0; color: #d6e7dd; padding: 7px 10px; border-radius: 8px; font-weight: 500; justify-content: flex-start; }
+    aside button:hover { background: rgb(255 255 255 / 8%); }
+    aside button.active { background: rgb(255 255 255 / 16%); color: #fff; font-weight: 700; }
+    aside .me { border-top: 1px solid rgb(255 255 255 / 15%); margin-top: 16px; padding: 12px 10px 0; font-size: .8rem; }
+    main { padding: 20px 24px 40px; min-width: 0; }
+    .page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+    .page-head h1 { margin: 0; }
+    .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+    .filters > * { width: auto; }
+    .drop { border: 2px dashed #b8c4bd; border-radius: 14px; padding: 28px; text-align: center; background: #fff; }
+    .drop.over { border-color: var(--brand); background: var(--brand-soft); }
+    .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 8px; }
+    .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: .9rem; }
+    .kv dt { color: var(--muted); }
+    .kv dd { margin: 0; }
+    .tabs2 { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 14px 0 10px; flex-wrap: wrap; }
+    .tabs2 button { border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: none; color: var(--muted); padding: 8px 10px; }
+    .tabs2 button.active { color: var(--brand); border-bottom-color: var(--brand); }
+    .menu-toggle { display: none; }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { position: fixed; z-index: 50; width: 250px; transform: translateX(-100%); transition: transform .2s; }
+      aside.open { transform: none; }
+      .menu-toggle { display: inline-flex; }
+      main { padding: 14px 16px 40px; }
+    }
+    .login { max-width: 380px; margin: 10vh auto; padding: 16px; }
+    .gh { margin: 22px 0 10px; }
+    .hero-metric { border-left: 4px solid var(--brand); }
+    .hero-metric .label { color: var(--muted); font-size: .9rem; }
+    .hero-metric .hero { font-size: 3.4rem; font-weight: 700; line-height: 1.1; margin: 4px 0; color: var(--text); }
+    .chart-wrap { position: relative; }
+    .chart { width: 100%; max-width: 760px; height: auto; display: block; }
+    .chart .grid { stroke: var(--line); stroke-width: 1; }
+    .chart .tick { fill: var(--muted); font-size: 11px; }
+    .chart .cap { fill: var(--text); font-size: 12px; font-weight: 600; }
+    .chart .col { fill: var(--brand); }
+    .chart .hit.on .col { fill: var(--brand-dark); }
+    .chart-tip { position: absolute; width: 200px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: .8rem; box-shadow: var(--shadow); pointer-events: none; }
+    .chart-tip .tv { font-size: 1.1rem; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/admin/app.js"></script>
+</body>
+</html>

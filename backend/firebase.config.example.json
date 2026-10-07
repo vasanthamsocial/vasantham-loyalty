@@ -1,0 +1,18 @@
+{
+  "_help": "Copy this file to firebase.config.json and fill it in from Firebase console → Project settings. Each service is switched on separately.",
+  "enabled": false,
+  "projectId": "your-project-id",
+  "region": "asia-south1",
+  "web": {
+    "apiKey": "",
+    "authDomain": "your-project-id.firebaseapp.com",
+    "projectId": "your-project-id",
+    "storageBucket": "your-project-id.firebasestorage.app",
+    "messagingSenderId": "",
+    "appId": ""
+  },
+  "serviceAccountFile": "firebase-service-account.json",
+  "services": {
+    "auth": true
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "vasantham-rewards",
+  "private": true,
+  "description": "Vasantham Customer Loyalty & Rewards \u2014 backend, customer app, manager panel and admin panel",
+  "scripts": {
+    "install-all": "npm --prefix backend install && npm --prefix customer-app/android-app install",
+    "start": "npm --prefix backend start",
+    "seed": "npm --prefix backend run seed",
+    "sample": "npm --prefix backend run sample",
+    "demo": "npm --prefix backend run demo",
+    "test": "npm --prefix backend test",
+    "dev:firebase": "firebase emulators:exec --project demo-vasantham --only auth --ui \"npm --prefix backend run start:firebase-emulator\"",
+    "build:hosting": "node firebase/build-hosting.mjs",
+    "deploy:hosting": "npm run build:hosting && firebase deploy --only hosting"
+  },
+  "devDependencies": {
+    "firebase-tools": "^14.27.0"
+  }
+}
