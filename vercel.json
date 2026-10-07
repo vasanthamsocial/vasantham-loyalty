@@ -4,7 +4,7 @@
   "buildCommand": "node firebase/build-hosting.mjs",
   "outputDirectory": "firebase/hosting-dist",
   "cleanUrls": true,
-  "regions": ["bom1"],
+  "regions": ["iad1"],
   "functions": {
     "api/index.js": { "maxDuration": 300, "includeFiles": "backend/src/**" }
   },
