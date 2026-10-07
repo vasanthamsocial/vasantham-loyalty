@@ -3,8 +3,7 @@
   "appName": "Vasantham Rewards",
   "webDir": "www",
   "server": {
-    "url": "http://10.0.2.2:4000/customer/",
-    "cleartext": true,
+    "url": "https://vasantham-loyalty.vercel.app/customer/",
     "errorPath": "offline.html"
   },
   "android": {

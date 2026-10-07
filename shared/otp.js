@@ -38,6 +38,17 @@ const MESSAGES = {
 const friendly = (e) => new Error(MESSAGES[e?.code] || e?.message || 'Could not verify the OTP');
 
 /**
+ * Start loading Firebase (SDK + security check) in the background as soon as an OTP screen
+ * opens, so tapping "Get OTP" only has to send the SMS. Returns the session promise, or null
+ * when the server uses its own OTP.
+ */
+export function preloadFirebaseOtp(api) {
+  return otpMode(api)
+    .then((m) => (m === 'firebase' ? firebaseOtp(api) : null))
+    .catch(() => null);
+}
+
+/**
  * A Firebase phone-OTP session. send(mobile) texts the code; verify(code) returns a
  * Firebase ID token for the server to check. Uses its own Firebase app instance and
  * signs out straight away, so it only proves the phone number and never keeps a session.
@@ -57,14 +68,22 @@ export async function firebaseOtp(api) {
     document.body.appendChild(box);
   }
   let verifier;
+  let used = false; // a reCAPTCHA token works once; "resend" needs a fresh verifier
+  const newVerifier = () => {
+    verifier?.clear();
+    box.innerHTML = '';
+    const holder = document.createElement('div');
+    box.appendChild(holder);
+    verifier = new A.RecaptchaVerifier(auth, holder, { size: 'invisible' });
+    verifier.render().catch(() => {}); // load the security check now, not when the button is tapped
+    used = false;
+  };
+  newVerifier();
   let confirmation;
   return {
     async send(mobile) {
-      verifier?.clear();
-      box.innerHTML = '';
-      const holder = document.createElement('div');
-      box.appendChild(holder);
-      verifier = new A.RecaptchaVerifier(auth, holder, { size: 'invisible' });
+      if (used) newVerifier();
+      used = true;
       try {
         confirmation = await A.signInWithPhoneNumber(auth, `+91${mobile}`, verifier);
       } catch (e) {

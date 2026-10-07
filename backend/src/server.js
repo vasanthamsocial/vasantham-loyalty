@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG } from './config.js';
 import { LOGO_DIR, LOGO_URL, MEDIA_STORE, OFFER_MEDIA_DIR, OFFER_MEDIA_URL, readMedia } from './media.js';
-import { get } from './db.js';
+import { dbStats, get } from './db.js';
 import authRoutes from './routes/auth.js';
 import customerRoutes from './routes/customer.js';
 import managerRoutes from './routes/manager.js';
@@ -12,8 +12,10 @@ import { expireStale } from './redemptions.js';
 import { recomputeSegments } from './segments.js';
 import { dailyEngagement } from './engagement.js';
 import { istDate } from './util.js';
+import { warmFirebase } from './firebase.js';
 
 export function createApp() {
+  warmFirebase();
   const app = express();
   app.set('trust proxy', process.env.VERCEL ? true : 'loopback'); // real client IPs behind Vercel's proxy
   app.disable('x-powered-by');
@@ -23,6 +25,16 @@ export function createApp() {
     res.setHeader('X-Frame-Options', 'DENY');
     if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
     next();
+  });
+  // Server-Timing: database queries and time per request (visible in the browser's network panel)
+  app.use((req, res, next) => {
+    const s = { n: 0, ms: 0, t: performance.now() };
+    const writeHead = res.writeHead;
+    res.writeHead = function (...args) {
+      if (!res.headersSent) res.setHeader('Server-Timing', `db;desc="${s.n} queries";dur=${s.ms.toFixed(1)}, app;dur=${(performance.now() - s.t).toFixed(1)}`);
+      return writeHead.apply(this, args);
+    };
+    dbStats.run(s, next);
   });
   app.use(express.json({ limit: '1mb' }));
 

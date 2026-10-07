@@ -54,6 +54,12 @@ async function app() {
   return adminApp;
 }
 
+/** Load Firebase Admin in the background when the server starts, so the first OTP check doesn't wait for it. */
+export function warmFirebase() {
+  if (otpProvider() !== 'firebase') return;
+  Promise.all([app(), import('firebase-admin/auth')]).catch(() => {});
+}
+
 /**
  * Check a Firebase phone sign-in and return the verified 10-digit mobile.
  * maxAgeSec makes sure the OTP was entered just now (not an old session).

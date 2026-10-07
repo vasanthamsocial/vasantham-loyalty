@@ -1,6 +1,6 @@
 import { makeApi, esc, $, $$, pts, inr, dt, dateOnly, toast, modal, busy, statusBadge, LEDGER_LABEL } from '/shared/lib.js';
 
-import { firebaseOtp, otpMode, tenDigitMobile } from '/shared/otp.js';
+import { firebaseOtp, otpMode, preloadFirebaseOtp, tenDigitMobile } from '/shared/otp.js';
 
 const api = makeApi('vl_customer_token');
 const root = $('#root');
@@ -50,6 +50,7 @@ function renderLogin() {
       </div>
     </div>`;
   let fb = null; // Firebase OTP session when the server uses Firebase
+  const fbReady = preloadFirebaseOtp(api); // load Firebase while the customer types the number
   const send = $('#send');
   send.onclick = busy(send, async () => {
     const mobile = $('#mobile').value;
@@ -57,7 +58,7 @@ function renderLogin() {
     if ((await otpMode(api)) === 'firebase') {
       const m = tenDigitMobile(mobile);
       if (!m) throw new Error('Enter a valid 10-digit mobile number');
-      fb = await firebaseOtp(api);
+      fb = (await fbReady) || (await firebaseOtp(api));
       r = await fb.send(m);
     } else {
       fb = null;

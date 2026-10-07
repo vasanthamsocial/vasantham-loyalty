@@ -1,5 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { fileURLToPath } from 'node:url';
 import { CONFIG, DEFAULT_SETTINGS } from './config.js';
 
 const SCHEMA = `
@@ -546,81 +549,101 @@ async function openDatabase() {
   return local;
 }
 export const db = await openDatabase();
-db.exec(SCHEMA);
-db.exec(`CREATE TABLE IF NOT EXISTS media_files (
-  kind TEXT NOT NULL,
-  file TEXT NOT NULL,
-  type TEXT NOT NULL,
-  data BLOB NOT NULL,
-  created_at TEXT NOT NULL,
-  PRIMARY KEY (kind, file)
-)`);
+/*
+ * Create / upgrade the schema. Skipped when nothing changed since the last run (same db.js
+ * and default settings), which saves ~25 round trips on every cold start of a hosted server.
+ */
+function migrate() {
+  db.exec(SCHEMA);
+  db.exec(`CREATE TABLE IF NOT EXISTS media_files (
+    kind TEXT NOT NULL,
+    file TEXT NOT NULL,
+    type TEXT NOT NULL,
+    data BLOB NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (kind, file)
+  )`);
 
-// migrations for databases created before a column existed
-function addColumns(table, cols) {
-  const have = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
-  for (const [name, type] of Object.entries(cols)) if (!have.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  // migrations for databases created before a column existed
+  function addColumns(table, cols) {
+    const have = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    for (const [name, type] of Object.entries(cols)) if (!have.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  }
+  addColumns('customers', { anniversary: 'TEXT' });
+  addColumns('branches', { address: 'TEXT', phone: 'TEXT', whatsapp: 'TEXT', map_url: 'TEXT', business_id: 'INTEGER REFERENCES businesses(id)' });
+  addColumns('offers', {
+    attachment_file: 'TEXT', attachment_type: 'TEXT', attachment_name: 'TEXT',
+    business_id: 'INTEGER REFERENCES businesses(id)', // where the reward is used
+    points_cost_cp: 'INTEGER NOT NULL DEFAULT 0', // >0 = points redemption reward (costs points); 0 = promotional unlock
+    cost_paise: 'INTEGER', // internal cost of the reward (NULL = same as value)
+    funding_type: "TEXT NOT NULL DEFAULT 'PROGRAM'", // PROGRAM (loyalty fund) | PARTNER | SHARED
+    funder_business_id: 'INTEGER REFERENCES businesses(id)', // partner who funds PARTNER / SHARED rewards
+    partner_share_paise: 'INTEGER NOT NULL DEFAULT 0', // SHARED: the partner's part of the cost
+    terms: 'TEXT',
+  });
+  addColumns('imports', { calc_mode: "TEXT NOT NULL DEFAULT 'AMOUNT'" });
+  addColumns('notifications', { offer_id: 'INTEGER' });
+  addColumns('offer_assignments', {
+    uses_allowed: 'INTEGER', // NULL = the offer's max uses; set when a reward is granted (once per grant)
+    source: 'TEXT', // CAMPAIGN | ASSIGN | CHALLENGE | AUTOMATION | REFERRAL
+  });
+  addColumns('offers', { target_segments: 'TEXT' });
+  // role-based access: access_role = what the login may do; business_id = the business a scoped role is limited to
+  addColumns('staff', { access_role: 'TEXT', business_id: 'INTEGER REFERENCES businesses(id)' });
+  db.exec("UPDATE staff SET access_role = CASE role WHEN 'ADMIN' THEN 'SUPER_ADMIN' ELSE 'BRANCH_MANAGER' END WHERE access_role IS NULL"); // global offer shown only to these segments (comma list)
+  addColumns('customers', { referral_code: 'TEXT' });
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_referral_code ON customers(referral_code)');
+  addColumns('redemptions', {
+    business_id: 'INTEGER REFERENCES businesses(id)',
+    bill_paise: 'INTEGER', // bill amount entered at approval (for % / minimum bill rules)
+    reward_cost_paise: 'INTEGER NOT NULL DEFAULT 0',
+    program_funded_paise: 'INTEGER NOT NULL DEFAULT 0',
+    partner_funded_paise: 'INTEGER NOT NULL DEFAULT 0',
+    partner_bill_no: 'TEXT', // bill confirmed by a partner outlet (no Excel upload)
+  });
+
+  // Every database has a program owner business (the loyalty fund). Existing data belongs to it.
+  if (!db.prepare('SELECT 1 FROM businesses WHERE is_program_owner = 1').get()) {
+    const now = new Date().toISOString();
+    const id = db.prepare(
+      `INSERT INTO businesses(code, name, category, tagline, can_earn, can_redeem, is_program_owner, billing_source, sort_order, created_at)
+       VALUES ('VSM', 'Vasantham Super Mart', 'Supermarket', 'Redeem points on grocery purchases', 1, 1, 1, 'EXCEL', 1, ?)`,
+    ).run(now).lastInsertRowid;
+    db.prepare('INSERT OR IGNORE INTO business_redemption_rules(business_id, updated_at) VALUES (?, ?)').run(id, now);
+  }
+  db.exec(`
+    UPDATE branches SET business_id = (SELECT id FROM businesses WHERE is_program_owner = 1 ORDER BY id LIMIT 1) WHERE business_id IS NULL;
+    UPDATE offers SET business_id = (SELECT id FROM businesses WHERE is_program_owner = 1 ORDER BY id LIMIT 1) WHERE business_id IS NULL;
+    UPDATE redemptions SET business_id = COALESCE((SELECT business_id FROM branches WHERE id = redemptions.branch_id),
+      (SELECT id FROM businesses WHERE is_program_owner = 1 ORDER BY id LIMIT 1)) WHERE business_id IS NULL;
+    CREATE TRIGGER IF NOT EXISTS trg_branch_business AFTER INSERT ON branches WHEN NEW.business_id IS NULL BEGIN
+      UPDATE branches SET business_id = (SELECT id FROM businesses WHERE is_program_owner = 1 ORDER BY id LIMIT 1) WHERE id = NEW.id;
+    END;
+    CREATE TRIGGER IF NOT EXISTS trg_offer_business AFTER INSERT ON offers WHEN NEW.business_id IS NULL BEGIN
+      UPDATE offers SET business_id = (SELECT id FROM businesses WHERE is_program_owner = 1 ORDER BY id LIMIT 1) WHERE id = NEW.id;
+    END;
+    CREATE INDEX IF NOT EXISTS ix_redemptions_business ON redemptions(business_id, approved_at);
+  `);
+
+  // one statement for all defaults (one round trip on a hosted database)
+  const defaults = Object.entries(DEFAULT_SETTINGS);
+  db.prepare(`INSERT OR IGNORE INTO settings(key, value) VALUES ${defaults.map(() => '(?, ?)').join(', ')}`)
+    .run(...defaults.flatMap(([k, v]) => [k, String(v)]));
 }
-addColumns('customers', { anniversary: 'TEXT' });
-addColumns('branches', { address: 'TEXT', phone: 'TEXT', whatsapp: 'TEXT', map_url: 'TEXT', business_id: 'INTEGER REFERENCES businesses(id)' });
-addColumns('offers', {
-  attachment_file: 'TEXT', attachment_type: 'TEXT', attachment_name: 'TEXT',
-  business_id: 'INTEGER REFERENCES businesses(id)', // where the reward is used
-  points_cost_cp: 'INTEGER NOT NULL DEFAULT 0', // >0 = points redemption reward (costs points); 0 = promotional unlock
-  cost_paise: 'INTEGER', // internal cost of the reward (NULL = same as value)
-  funding_type: "TEXT NOT NULL DEFAULT 'PROGRAM'", // PROGRAM (loyalty fund) | PARTNER | SHARED
-  funder_business_id: 'INTEGER REFERENCES businesses(id)', // partner who funds PARTNER / SHARED rewards
-  partner_share_paise: 'INTEGER NOT NULL DEFAULT 0', // SHARED: the partner's part of the cost
-  terms: 'TEXT',
-});
-addColumns('imports', { calc_mode: "TEXT NOT NULL DEFAULT 'AMOUNT'" });
-addColumns('notifications', { offer_id: 'INTEGER' });
-addColumns('offer_assignments', {
-  uses_allowed: 'INTEGER', // NULL = the offer's max uses; set when a reward is granted (once per grant)
-  source: 'TEXT', // CAMPAIGN | ASSIGN | CHALLENGE | AUTOMATION | REFERRAL
-});
-addColumns('offers', { target_segments: 'TEXT' });
-// role-based access: access_role = what the login may do; business_id = the business a scoped role is limited to
-addColumns('staff', { access_role: 'TEXT', business_id: 'INTEGER REFERENCES businesses(id)' });
-db.exec("UPDATE staff SET access_role = CASE role WHEN 'ADMIN' THEN 'SUPER_ADMIN' ELSE 'BRANCH_MANAGER' END WHERE access_role IS NULL"); // global offer shown only to these segments (comma list)
-addColumns('customers', { referral_code: 'TEXT' });
-db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_referral_code ON customers(referral_code)');
-addColumns('redemptions', {
-  business_id: 'INTEGER REFERENCES businesses(id)',
-  bill_paise: 'INTEGER', // bill amount entered at approval (for % / minimum bill rules)
-  reward_cost_paise: 'INTEGER NOT NULL DEFAULT 0',
-  program_funded_paise: 'INTEGER NOT NULL DEFAULT 0',
-  partner_funded_paise: 'INTEGER NOT NULL DEFAULT 0',
-  partner_bill_no: 'TEXT', // bill confirmed by a partner outlet (no Excel upload)
-});
-
-// Every database has a program owner business (the loyalty fund). Existing data belongs to it.
-if (!db.prepare('SELECT 1 FROM businesses WHERE is_program_owner = 1').get()) {
-  const now = new Date().toISOString();
-  const id = db.prepare(
-    `INSERT INTO businesses(code, name, category, tagline, can_earn, can_redeem, is_program_owner, billing_source, sort_order, created_at)
-     VALUES ('VSM', 'Vasantham Super Mart', 'Supermarket', 'Redeem points on grocery purchases', 1, 1, 1, 'EXCEL', 1, ?)`,
-  ).run(now).lastInsertRowid;
-  db.prepare('INSERT OR IGNORE INTO business_redemption_rules(business_id, updated_at) VALUES (?, ?)').run(id, now);
+const SCHEMA_HASH = createHash('sha256')
+  .update(fs.readFileSync(fileURLToPath(import.meta.url)))
+  .update(JSON.stringify(DEFAULT_SETTINGS))
+  .digest('hex');
+let appliedHash = null;
+try {
+  appliedHash = db.prepare("SELECT value FROM settings WHERE key = 'schema_hash'").get()?.value ?? null;
+} catch {
+  /* new database: no settings table yet */
 }
-db.exec(`
-  UPDATE branches SET business_id = (SELECT id FROM businesses WHERE is_program_owner = 1 ORDER BY id LIMIT 1) WHERE business_id IS NULL;
-  UPDATE offers SET business_id = (SELECT id FROM businesses WHERE is_program_owner = 1 ORDER BY id LIMIT 1) WHERE business_id IS NULL;
-  UPDATE redemptions SET business_id = COALESCE((SELECT business_id FROM branches WHERE id = redemptions.branch_id),
-    (SELECT id FROM businesses WHERE is_program_owner = 1 ORDER BY id LIMIT 1)) WHERE business_id IS NULL;
-  CREATE TRIGGER IF NOT EXISTS trg_branch_business AFTER INSERT ON branches WHEN NEW.business_id IS NULL BEGIN
-    UPDATE branches SET business_id = (SELECT id FROM businesses WHERE is_program_owner = 1 ORDER BY id LIMIT 1) WHERE id = NEW.id;
-  END;
-  CREATE TRIGGER IF NOT EXISTS trg_offer_business AFTER INSERT ON offers WHEN NEW.business_id IS NULL BEGIN
-    UPDATE offers SET business_id = (SELECT id FROM businesses WHERE is_program_owner = 1 ORDER BY id LIMIT 1) WHERE id = NEW.id;
-  END;
-  CREATE INDEX IF NOT EXISTS ix_redemptions_business ON redemptions(business_id, approved_at);
-`);
-
-// one statement for all defaults (one round trip on a hosted database)
-const defaults = Object.entries(DEFAULT_SETTINGS);
-db.prepare(`INSERT OR IGNORE INTO settings(key, value) VALUES ${defaults.map(() => '(?, ?)').join(', ')}`)
-  .run(...defaults.flatMap(([k, v]) => [k, String(v)]));
+if (appliedHash !== SCHEMA_HASH) {
+  migrate();
+  db.prepare("INSERT INTO settings(key, value) VALUES ('schema_hash', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(SCHEMA_HASH);
+}
 
 /* ---------- helpers ---------- */
 
@@ -633,9 +656,25 @@ function stmt(sql) {
   }
   return s;
 }
-export const get = (sql, ...p) => stmt(sql).get(...p);
-export const all = (sql, ...p) => stmt(sql).all(...p);
-export const run = (sql, ...p) => stmt(sql).run(...p);
+/** Per-request database stats (query count and time), reported in the Server-Timing header. */
+export const dbStats = new AsyncLocalStorage();
+function track(fn) {
+  const s = dbStats.getStore();
+  if (!s) return fn();
+  const t = performance.now();
+  try {
+    return fn();
+  } finally {
+    s.n++;
+    s.ms += performance.now() - t;
+  }
+}
+const rawExec = db.exec.bind(db);
+db.exec = (sql) => track(() => rawExec(sql));
+
+export const get = (sql, ...p) => track(() => stmt(sql).get(...p));
+export const all = (sql, ...p) => track(() => stmt(sql).all(...p));
+export const run = (sql, ...p) => track(() => stmt(sql).run(...p));
 
 let depth = 0;
 /** Run fn atomically. Nested calls become savepoints. */

@@ -1,5 +1,5 @@
 import { makeApi, esc, $, $$, pts, inr, dt, timeOnly, dateOnly, toast, modal, busy, statusBadge, todayIST } from '/shared/lib.js';
-import { firebaseOtp, otpMode } from '/shared/otp.js';
+import { firebaseOtp, otpMode, preloadFirebaseOtp } from '/shared/otp.js';
 
 const api = makeApi('vl_manager_token');
 const root = $('#root');
@@ -342,11 +342,12 @@ function renderCustomer(c, ticket, otpRequired) {
       <input id="otp" inputmode="numeric" maxlength="6" placeholder="OTP" style="width:120px" class="hidden" />
       <button id="verifyOtp" class="btn-primary hidden">Verify</button></div><div id="otpHint" class="small muted"></div>`;
     let fb = null; // Firebase OTP session when the server uses Firebase
+    const fbReady = preloadFirebaseOtp(api); // load Firebase before "Send OTP" is tapped
     const s = $('#sendOtp');
     s.onclick = busy(s, async () => {
       let r;
       if ((await otpMode(api)) === 'firebase') {
-        fb = await firebaseOtp(api);
+        fb = (await fbReady) || (await firebaseOtp(api));
         r = await fb.send(c.mobile);
       } else {
         r = await api.post(`/manager/customers/${c.id}/otp`);

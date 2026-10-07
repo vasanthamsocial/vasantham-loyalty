@@ -33,3 +33,8 @@ Thumbs.db
 
 .vercel
 .env*
+
+# signing keys (kept in ~/vasantham-keys, never here)
+*.jks
+*.keystore
+keystore.properties
