@@ -1032,7 +1032,9 @@ const VIEWS = {
       a.click();
     };
     const columnsHelp = (c) => {
-      $('#cols').innerHTML = mode() === 'POINTS'
+      const box = $('#cols', el);
+      if (!box) return; // left the page before the column list arrived
+      box.innerHTML = mode() === 'POINTS'
         ? `<p><b>Required:</b> Bill No, Bill Date, Branch (or choose above), <b>Points</b> (per bill, up to 2 decimals), and Customer Mobile and/or Customer Code for member bills.<br/>
         <b>Recommended:</b> Net Eligible Value (for purchase history and analytics), Bill Time, Loyalty Ref, Loyalty Discount, Bill Type (SALE / RETURN / CANCELLED), Original Bill No.<br/>
         <b>Returns:</b> the Points on a RETURN row are the points to take back (never more than the original bill earned). CANCELLED bills take back all remaining points of the original bill.<br/>
