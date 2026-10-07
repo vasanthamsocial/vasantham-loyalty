@@ -356,7 +356,7 @@ The Emulator UI is at http://127.0.0.1:4001.
 
 ## Deploying to Vercel
 
-The repository is ready for Vercel: `vercel.json` builds the three apps as static files and runs the backend as one serverless function (`api/index.js`). **The function region in `vercel.json` must match the Turso database region** (currently `iad1` / US East, next to the database); each request makes many database calls, so they must be close together. Vercel keeps no files between requests, so on Vercel:
+The repository is ready for Vercel: `vercel.json` builds the three apps as static files and runs the backend as one serverless function (`api/index.js`). **The function region in `vercel.json` must match the Turso database region** (currently `bom1` / Mumbai, next to the Turso database in `aws-ap-south-1`); each request makes many database calls, so they must be close together. Vercel keeps no files between requests, so on Vercel:
 
 | Needs | How it works on Vercel |
 |---|---|
